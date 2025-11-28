@@ -1,0 +1,53 @@
+name: Daily Transaction Report
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC 时间，这里是 UTC+8 对应的时间：
+    # 本地 23:01 -> UTC 15:01
+    - cron: '1 15 * * *'
+    # 本地 10:30 -> UTC 02:30
+    - cron: '30 2 * * *'
+    # 本地 12:50 -> UTC 04:50
+    - cron: '50 4 * * *'
+    # 本地 18:50 -> UTC 10:50
+    - cron: '50 10 * * *'
+
+  # 你在 GitHub 上手动触发也可以
+  workflow_dispatch:
+
+jobs:
+  build-and-generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Generate transaction report (Asia/Shanghai today)
+        env:
+          PARTNERBOOST_TOKEN: ${{ secrets.PARTNERBOOST_TOKEN }}
+        run: |
+          # 计算上海时间的今天
+          DAY=$(date -u -d '+8 hours' '+%Y-%m-%d')
+          echo "Generating report for $DAY"
+          python daily_transaction_report.py "$DAY"
+
+      - name: Commit and push updated docs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs || true
+          git diff --cached --quiet && echo 'No changes to commit.' && exit 0
+          git commit -m "Update transaction reports for $(date -u) [skip ci]"
+          git push
