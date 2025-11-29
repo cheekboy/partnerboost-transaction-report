@@ -14,10 +14,10 @@ TOKEN_ENV_NAME = "PARTNERBOOST_TOKEN"
 load_dotenv()
 
 
-def fetch_transactions_for_day(day_str: str, limit: int = 1000) -> List[Dict[str, Any]]:
-    """拉取某一天的所有交易（按交易时间 begin_date/end_date）。
+def fetch_transactions(begin_date: str, end_date: str, limit: int = 1000) -> List[Dict[str, Any]]:
+    """拉取一段时间内的所有交易（按交易时间 begin_date/end_date）。
 
-    day_str: 'YYYY-MM-DD'
+    begin_date, end_date: 'YYYY-MM-DD'
     """
     token = os.getenv(TOKEN_ENV_NAME)
     if not token:
@@ -35,14 +35,14 @@ def fetch_transactions_for_day(day_str: str, limit: int = 1000) -> List[Dict[str
         data = {
             "token": token,
             "type": "json",
-            "begin_date": day_str,
-            "end_date": day_str,
+            "begin_date": begin_date,
+            "end_date": end_date,
             "page": page,
             "limit": limit,
             # 如需过滤可加: status, brand_id, mcid, uid 等
         }
 
-        print(f"[transaction] Fetching {day_str}, page={page} ...")
+        print(f"[transaction] Fetching {begin_date} -> {end_date}, page={page} ...")
         resp = requests.post(API_URL, params=params, data=data, timeout=30)
         resp.raise_for_status()
         result = resp.json()
@@ -98,15 +98,22 @@ def aggregate_by_brand(transactions: List[Dict[str, Any]]) -> Dict[str, Dict[str
     return result
 
 
-def write_html_report(day_str: str, agg: Dict[str, Dict[str, float]]) -> str:
+def write_html_report(range_key: str, begin_date: str, end_date: str, agg: Dict[str, Dict[str, float]]) -> str:
     """把按品牌汇总的结果写入一个静态 HTML 文件，返回文件路径。
+
+    range_key: today / yesterday / last7 / last14 / single
+    begin_date, end_date: 'YYYY-MM-DD'
 
     HTML 文件输出到 docs/ 目录，方便后续用 GitHub Pages 直接托管。
     """
     docs_dir = os.path.join(os.path.dirname(__file__), "docs")
     os.makedirs(docs_dir, exist_ok=True)
 
-    filename = f"transaction_report_{day_str}.html"
+    # 文件名：单日仍然以日期命名；范围则包含起止日期和范围 key
+    if begin_date == end_date:
+        filename = f"transaction_report_{end_date}.html"
+    else:
+        filename = f"transaction_report_{begin_date}_to_{end_date}_{range_key}.html"
     filepath = os.path.join(docs_dir, filename)
 
     # 总体汇总
@@ -130,11 +137,25 @@ def write_html_report(day_str: str, agg: Dict[str, Dict[str, float]]) -> str:
             f"</tr>"
         )
 
+    # 标题显示的人类可读范围
+    if begin_date == end_date:
+        if range_key == "today":
+            range_label = f"{end_date} · Today"
+        elif range_key == "yesterday":
+            range_label = f"{end_date} · Yesterday"
+        else:
+            range_label = end_date
+    else:
+        human = {"last7": "Last 7 days", "last14": "Last 14 days"}.get(range_key, "")
+        range_label = f"{begin_date} → {end_date}"
+        if human:
+            range_label = f"{range_label} · {human}"
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Transaction Report {day_str}</title>
+  <title>Transaction Report {range_label}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root {{
@@ -273,7 +294,7 @@ def write_html_report(day_str: str, agg: Dict[str, Dict[str, float]]) -> str:
     <div class="card">
       <div class="header">
         <div class="title">PartnerBoost Transaction Report</div>
-        <div class="date-pill">{day_str}</div>
+        <div class="date-pill">{range_label}</div>
       </div>
       <div class="summary">
         <div class="summary-item">
@@ -322,25 +343,66 @@ def write_html_report(day_str: str, agg: Dict[str, Dict[str, float]]) -> str:
     return filepath
 
 
-def parse_day_arg(argv: List[str]) -> date:
-    """从命令行解析日期参数，格式 YYYY-MM-DD；不传则返回昨天。"""
-    if len(argv) >= 2:
-        day_str = argv[1]
-        return datetime.strptime(day_str, "%Y-%m-%d").date()
-    return date.today() - timedelta(days=1)
+def parse_range_arg(argv: List[str]) -> (str, str, str):
+    """解析命令行参数，支持：
+
+    - 无参数: 昨天 (range_key='yesterday')
+    - today
+    - yesterday
+    - last7  (最近7天，包含今天)
+    - last14 (最近14天，包含今天)
+    - YYYY-MM-DD (单一天，range_key='single')
+
+    返回: (begin_date_str, end_date_str, range_key)
+    """
+
+    today = date.today()
+
+    if len(argv) < 2:
+        # 默认昨天
+        y = today - timedelta(days=1)
+        d_str = y.strftime("%Y-%m-%d")
+        return d_str, d_str, "yesterday"
+
+    arg = argv[1].strip().lower()
+
+    if arg == "today":
+        d_str = today.strftime("%Y-%m-%d")
+        return d_str, d_str, "today"
+
+    if arg == "yesterday":
+        y = today - timedelta(days=1)
+        d_str = y.strftime("%Y-%m-%d")
+        return d_str, d_str, "yesterday"
+
+    if arg == "last7":
+        end_d = today
+        begin_d = today - timedelta(days=6)
+        return begin_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d"), "last7"
+
+    if arg == "last14":
+        end_d = today
+        begin_d = today - timedelta(days=13)
+        return begin_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d"), "last14"
+
+    # 其余情况按具体日期解析
+    d = datetime.strptime(arg, "%Y-%m-%d").date()
+    d_str = d.strftime("%Y-%m-%d")
+    return d_str, d_str, "single"
 
 
 def main() -> None:
-    day = parse_day_arg(sys.argv)
-    day_str = day.strftime("%Y-%m-%d")
+    begin_str, end_str, range_key = parse_range_arg(sys.argv)
 
-    print(f"[transaction] Generating transaction report for {day_str} ...")
-    txs = fetch_transactions_for_day(day_str)
+    print(
+        f"[transaction] Generating transaction report for {begin_str} -> {end_str} (mode={range_key}) ..."
+    )
+    txs = fetch_transactions(begin_str, end_str)
     print(f"[transaction] Total transactions: {len(txs)}")
 
     agg = aggregate_by_brand(txs)
 
-    print("Brand Transaction Report for", day_str)
+    print("Brand Transaction Report for", f"{begin_str} -> {end_str}")
     print("Brand, Orders, Sales, Commission")
     for brand, stats in sorted(agg.items(), key=lambda x: x[0]):
         print(
@@ -351,7 +413,7 @@ def main() -> None:
         )
 
     # 生成静态 HTML 报表
-    write_html_report(day_str, agg)
+    write_html_report(range_key, begin_str, end_str, agg)
 
 
 if __name__ == "__main__":

@@ -32,14 +32,12 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Generate transaction report (Asia/Shanghai today)
+      - name: Generate transaction report (default: yesterday)
         env:
           PARTNERBOOST_TOKEN: ${{ secrets.PARTNERBOOST_TOKEN }}
         run: |
-          # 计算上海时间的今天
-          DAY=$(date -u -d '+8 hours' '+%Y-%m-%d')
-          echo "Generating report for $DAY"
-          python daily_transaction_report.py "$DAY"
+          # 不传参数，让脚本自己默认统计“昨天”的数据
+          python daily_transaction_report.py
 
       - name: Commit and push updated docs
         env:
