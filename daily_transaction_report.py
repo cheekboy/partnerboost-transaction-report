@@ -125,9 +125,9 @@ def write_html_report(range_key: str, begin_date: str, end_date: str, agg: Dict[
         total_sales += float(stats["sales"])
         total_commission += float(stats["commission"])
 
-    # 生成表格行
+    # 生成表格行（按佣金倒序排序）
     rows_html = []
-    for brand, stats in sorted(agg.items(), key=lambda x: x[0].lower()):
+    for brand, stats in sorted(agg.items(), key=lambda x: x[1]["commission"], reverse=True):
         rows_html.append(
             f"<tr>"
             f"<td class='brand'>{brand}</td>"
@@ -403,8 +403,8 @@ def main() -> None:
     agg = aggregate_by_brand(txs)
 
     print("Brand Transaction Report for", f"{begin_str} -> {end_str}")
-    print("Brand, Orders, Sales, Commission")
-    for brand, stats in sorted(agg.items(), key=lambda x: x[0]):
+    print("Brand, Orders, Sales, Commission (sorted by commission desc)")
+    for brand, stats in sorted(agg.items(), key=lambda x: x[1]["commission"], reverse=True):
         print(
             f"{brand}, "
             f"{int(stats['orders'])}, "
