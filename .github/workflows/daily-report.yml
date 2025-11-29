@@ -32,7 +32,7 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Generate transaction report (default: yesterday)
+      - name: "Generate transaction report (default: yesterday)"
         env:
           PARTNERBOOST_TOKEN: ${{ secrets.PARTNERBOOST_TOKEN }}
         run: |
