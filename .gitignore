@@ -10,3 +10,5 @@ __pycache__/
 
 # Databases / local artifacts
 products.db
+
+docs/*
